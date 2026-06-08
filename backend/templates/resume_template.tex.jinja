@@ -1,0 +1,146 @@
+{% raw %}\documentclass[9.2pt]{article}
+
+\usepackage[a4paper,top=0.35in,bottom=0.35in,left=0.42in,right=0.42in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{multicol}
+\usepackage{paracol}
+\usepackage{titlesec}
+
+\hypersetup{hidelinks, colorlinks=true, urlcolor=black, linkcolor=black}
+
+\setlength\parindent{0pt}
+\renewcommand{\baselinestretch}{0.93}
+\setlength{\parskip}{0pt}
+
+\setlist[itemize]{left=0.9em,label=\textbullet,itemsep=0.5pt,topsep=1.5pt,parsep=0pt,partopsep=0pt}
+
+% ---- Section heading ----
+\newcommand{\ressec}[1]{%
+  \vspace{5pt}%
+  {\small\scshape\textbf{#1}}\\[-4pt]%
+  \noindent\rule{\linewidth}{0.4pt}%
+  \vspace{2.5pt}%
+}
+
+% ---- Entry header ----
+\newcommand{\entryA}[3]{%
+  \noindent{\small\textbf{#1}}\hfill{\small\textit{#3}}\\[-3pt]%
+  \noindent{\footnotesize\textit{#2}}%
+  \vspace{2pt}%
+}
+
+\begin{document}
+
+% ============================================================
+%  HEADER
+% ============================================================
+\begin{center}{% endraw %}
+{\fontsize{23}{28}\selectfont\scshape {{ personal.name | latex_escape }}}\\[4pt]
+{\small
+  \href{mailto:{{ personal.email }}}{ {{ personal.email | latex_escape }} }
+  {% if personal.linkedin %}\;$|$\; \href{ {{ personal.linkedin }} }{LinkedIn}{% endif %}
+  {% if personal.github %}\;$|$\; \href{ {{ personal.github }} }{GitHub}{% endif %}
+  {% if personal.portfolio %}\;$|$\; \href{ {{ personal.portfolio }} }{Portfolio}{% endif %}
+  {% if personal.phone %}\;$|$\; {{ personal.phone | latex_escape }}{% endif %}
+}
+{% raw %}\end{center}
+
+\vspace{2.5pt}
+\noindent\rule{\linewidth}{0.6pt}
+\vspace{2.5pt}
+
+% ============================================================
+%  TWO-COLUMN BODY
+% ============================================================
+\columnratio{0.35}
+\begin{paracol}{2}
+
+% ============================================================
+%  LEFT COLUMN
+% ============================================================
+{% endraw %}
+
+{% if education %}
+{% raw %}\ressec{Education}{% endraw %}
+{% for edu in education %}
+{% raw %}\noindent{% endraw %}{\small\textbf{ {{ edu.institution | latex_escape }} }}\\
+{\small {{ edu.degree | latex_escape }} }\\
+{\small {{ edu.date | latex_escape }} }\\
+{\small GPA: \textbf{ {{ edu.gpa | latex_escape }} }}
+
+{% raw %}\vspace{5pt}{% endraw %}
+{% endfor %}
+{% endif %}
+
+{% if skills %}
+{% raw %}\ressec{Skills}{% endraw %}
+{% for category, items_str in skills.items() %}
+{% raw %}\noindent{% endraw %}{\small\textbf{ {{ category | latex_escape }} }}
+{% raw %}\begin{itemize}[left=0.5em,topsep=2pt,itemsep=1pt]{% endraw %}
+  {% for item in items_str.split(',') %}
+  \item[\small--] {\small {{ item.strip() | latex_escape }} }
+  {% endfor %}
+{% raw %}\end{itemize}{% endraw %}
+{% raw %}\vspace{1pt}{% endraw %}
+{% endfor %}
+{% endif %}
+
+{% if certifications %}
+{% raw %}\ressec{Certifications}
+\begin{itemize}[left=0.5em,topsep=2pt,itemsep=1.5pt]{% endraw %}
+  {% for cert in certifications %}
+  \item[\small--] {\small {{ cert.name | latex_escape }} }
+  {% endfor %}
+{% raw %}\end{itemize}{% endraw %}
+{% endif %}
+
+{% raw %}
+% ============================================================
+\switchcolumn
+% ============================================================
+{% endraw %}
+
+{% if experiences %}
+{% raw %}\ressec{Experience}{% endraw %}
+{% for exp in experiences %}
+\entryA{ {{ exp.title | latex_escape }} }{ {{ exp.company | latex_escape }} -- {{ exp.location | latex_escape }} }{ {{ exp.year | latex_escape }} }
+{% raw %}\begin{itemize}\small{% endraw %}
+  {% for bullet in exp.bullets %}
+  \item {{ bullet | latex_escape }}
+  {% endfor %}
+{% raw %}\end{itemize}
+\vspace{2.5pt}{% endraw %}
+{% endfor %}
+{% endif %}
+
+{% if projects %}
+{% raw %}\ressec{Projects}{% endraw %}
+{% for proj in projects %}
+{% raw %}\noindent{% endraw %}{\small\textbf{ {{ proj.name | latex_escape }} }}\;{\small {{ proj.tech | latex_escape }} }\hfill{\small\textit{ {{ proj.date | latex_escape }} }{% if proj.github %}\;[\href{ {{ proj.github }} }{git}]{% endif %}}
+{% raw %}\begin{itemize}\small{% endraw %}
+  {% for bullet in proj.bullets %}
+  \item {{ bullet | latex_escape }}
+  {% endfor %}
+{% raw %}\end{itemize}
+\vspace{2.5pt}{% endraw %}
+{% endfor %}
+{% endif %}
+
+{% if achievements %}
+{% raw %}\ressec{Achievements}
+\begin{itemize}[left=0.5em,topsep=2pt,itemsep=2pt]{% endraw %}
+{% for ach in achievements %}
+  \item[\small--] {\small\textbf{ {{ ach.title | latex_escape }} }: {{ ach.description | latex_escape }} }
+{% endfor %}
+{% raw %}\end{itemize}{% endraw %}
+{% endif %}
+
+{% raw %}\end{paracol}
+
+\end{document}{% endraw %}

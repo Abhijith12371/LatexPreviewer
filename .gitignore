@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Backend
+backend/.env
+backend/chroma_db/
+backend/output/
+backend/fine_tuning_logs.jsonl

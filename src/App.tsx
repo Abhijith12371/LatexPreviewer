@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sigma } from 'lucide-react';
 import EditorPane from './components/EditorPane';
 import PreviewPane from './components/PreviewPane';
+import AIGeneratorPanel from './components/AIGeneratorPanel';
 
 function App() {
   const [latex, setLatex] = useState<string>(
@@ -33,12 +34,24 @@ function App() {
       {/* Main Content */}
       <main className="flex-grow z-10 p-4 md:p-6 overflow-hidden">
         <div className="glass-panel w-full h-full p-2 flex flex-col lg:flex-row gap-2">
-          <div className="flex-1 min-h-[40%] lg:min-h-0 relative group">
-            <EditorPane value={latex} onChange={setLatex} />
+          {/* Left Panel: AI Generator */}
+          <div className="flex-[0.25] min-h-[40%] lg:min-h-0 relative group">
+            <AIGeneratorPanel onGenerate={setLatex} />
           </div>
+          
           <div className="hidden lg:block w-px bg-slate-700/50 my-4" />
           <div className="block lg:hidden h-px w-full bg-slate-700/50 mx-4" />
-          <div className="flex-1 min-h-[40%] lg:min-h-0 relative">
+          
+          {/* Middle Panel: Editor */}
+          <div className="flex-[0.35] min-h-[40%] lg:min-h-0 relative group">
+            <EditorPane value={latex} onChange={setLatex} />
+          </div>
+          
+          <div className="hidden lg:block w-px bg-slate-700/50 my-4" />
+          <div className="block lg:hidden h-px w-full bg-slate-700/50 mx-4" />
+          
+          {/* Right Panel: Preview */}
+          <div className="flex-[0.40] min-h-[40%] lg:min-h-0 relative">
             <PreviewPane latex={latex} />
           </div>
         </div>
