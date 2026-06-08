@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  Briefcase, LayoutDashboard, User, CheckCircle,
+  Briefcase, LayoutDashboard, CheckCircle,
   Award, FileText, Settings, LogOut, FileCode, GraduationCap
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';

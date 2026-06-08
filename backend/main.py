@@ -6,7 +6,14 @@ from pydantic import BaseModel
 import os
 import traceback
 import json
+import tempfile
+from datetime import datetime
 from bson import ObjectId
+from dotenv import load_dotenv
+import cloudinary
+import cloudinary.uploader
+
+load_dotenv()
 
 from schemas import (
     GenerateResumeRequest, GenerateResumeResponse, CandidateProfile, 
@@ -16,8 +23,15 @@ from pipeline import generate_resume_json
 from pdf_generator import generate_pdf_from_json
 from logger import log_generation
 from database import store_candidate_data
-from database_mongo import init_db, users_collection, profiles_collection
+from database_mongo import init_db, users_collection, profiles_collection, resumes_collection
 from auth import get_password_hash, verify_password, create_access_token, decode_access_token
+
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
 
 app = FastAPI(title="AI Resume Generation API")
 
@@ -179,6 +193,154 @@ async def compile_pdf(request: CompilePDFRequest):
         raise HTTPException(status_code=504, detail="Compilation timed out. The document might be too complex.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Save Resume to Cloudinary + MongoDB ─────────────────────────────────────
+
+class SaveResumeRequest(BaseModel):
+    title: str
+    latex: str
+
+@app.post("/save-resume")
+async def save_resume(request: SaveResumeRequest, current_user: dict = Depends(get_current_user)):
+    """Compile LaTeX → PDF, upload to Cloudinary, save metadata to MongoDB."""
+    import requests as req_lib
+    try:
+        # Step 1: Compile LaTeX to PDF via texlive.net
+        compile_url = "https://texlive.net/cgi-bin/latexcgi"
+        files = {
+            "filecontents[]": (None, request.latex),
+            "filename[]": (None, "document.tex"),
+            "engine": (None, "pdflatex"),
+            "return": (None, "pdf")
+        }
+        compile_response = req_lib.post(compile_url, files=files, timeout=90)
+
+        if compile_response.status_code != 200 or \
+           compile_response.headers.get("content-type", "") != "application/pdf":
+            error_text = compile_response.text[:500]
+            raise HTTPException(status_code=400, detail=f"LaTeX compilation failed: {error_text}")
+
+        pdf_bytes = compile_response.content
+
+        # Step 2: Write to a temp file and upload to Cloudinary
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        try:
+            timestamp = int(datetime.utcnow().timestamp())
+            # Replace spaces and special chars so the URL is clean and doesn't break
+            safe_title = "".join(
+                c if c.isalnum() or c in "_-" else "_"
+                for c in request.title
+            ).strip("_")
+            upload_result = cloudinary.uploader.upload(
+                tmp_path,
+                resource_type="raw",
+                type="upload",          # "upload" delivery type = publicly accessible
+                access_mode="public",   # explicitly mark as public (overrides account defaults)
+                folder=f"resumes/{current_user['id']}",
+                public_id=f"{safe_title}_{timestamp}",
+            )
+        finally:
+            os.unlink(tmp_path)
+
+        pdf_url = upload_result.get("secure_url")
+
+        # Step 3: Save metadata to MongoDB
+        resume_doc = {
+            "user_id": current_user["id"],
+            "title": request.title,
+            "latex": request.latex,
+            "pdf_url": pdf_url,
+            "cloudinary_public_id": upload_result.get("public_id"),
+            "created_at": datetime.utcnow().isoformat()
+        }
+        result = await resumes_collection.insert_one(resume_doc)
+
+        return {
+            "id": str(result.inserted_id),
+            "title": request.title,
+            "pdf_url": pdf_url,
+            "created_at": resume_doc["created_at"]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/saved-resumes")
+async def get_saved_resumes(current_user: dict = Depends(get_current_user)):
+    """Return all saved resumes for the current user, newest first."""
+    cursor = resumes_collection.find({"user_id": current_user["id"]}).sort("created_at", -1)
+    resumes = []
+    async for doc in cursor:
+        resumes.append({
+            "id": str(doc["_id"]),
+            "title": doc.get("title", "Untitled"),
+            "pdf_url": doc.get("pdf_url"),
+            "latex": doc.get("latex", ""),
+            "created_at": doc.get("created_at")
+        })
+    return resumes
+
+
+@app.get("/resume-view-url/{resume_id}")
+async def get_resume_view_url(resume_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate a signed Cloudinary URL for the resume PDF. Signed URLs bypass Strict Transformations."""
+    import cloudinary.utils
+    try:
+        obj_id = ObjectId(resume_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid resume ID")
+
+    doc = await resumes_collection.find_one({"_id": obj_id, "user_id": current_user["id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    public_id = doc.get("cloudinary_public_id")
+    if not public_id:
+        raise HTTPException(status_code=404, detail="No PDF stored for this resume")
+
+    # Signed URLs bypass Cloudinary's Strict Transformations / access restrictions
+    signed_url = cloudinary.utils.cloudinary_url(
+        public_id,
+        resource_type="raw",
+        type="upload",
+        sign_url=True,
+        secure=True,
+    )[0]
+
+    return {"url": signed_url}
+
+
+@app.delete("/saved-resumes/{resume_id}")
+async def delete_saved_resume(resume_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a saved resume by ID (only if owned by current user)."""
+    try:
+        obj_id = ObjectId(resume_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid resume ID")
+
+    doc = await resumes_collection.find_one({"_id": obj_id, "user_id": current_user["id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Resume not found or access denied")
+
+    # Optionally delete from Cloudinary too
+    public_id = doc.get("cloudinary_public_id")
+    if public_id:
+        try:
+            cloudinary.uploader.destroy(public_id, resource_type="raw")
+        except Exception:
+            pass  # Don't fail the request if Cloudinary delete fails
+
+    await resumes_collection.delete_one({"_id": obj_id})
+    return {"status": "deleted", "id": resume_id}
+
 
 @app.post("/candidate", summary="Create or update a candidate profile in ChromaDB")
 async def create_candidate(candidate: CandidateProfile):

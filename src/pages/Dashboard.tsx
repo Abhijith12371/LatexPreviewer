@@ -5,8 +5,11 @@ import Modal from '../components/Modal';
 import api from '../api';
 import {
   User, Briefcase, FileCode, Award, CheckCircle,
-  GraduationCap, Pencil, Plus, Trash2, GitBranch
+  GraduationCap, Pencil, Plus, Trash2, GitBranch,
+  FileText
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
 
 /* ─── helpers ─── */
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -65,9 +68,12 @@ const CardHeader = ({ icon, title, color, onAdd }: any) => (
 
 /* ═══════════════════════════════════════════════════ */
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [savedResumes, setSavedResumes] = useState<any[]>([]);
+  const [resumesLoading, setResumesLoading] = useState(true);
 
   /* modal open states */
   const [modal, setModal] = useState<string | null>(null);
@@ -82,15 +88,45 @@ export default function Dashboard() {
   const [certForm, setCertForm] = useState<any>({});
   const [achForm, setAchForm] = useState<any>({});
   const [eduForm, setEduForm] = useState<any>({});
-  const [skillsInput, setSkillsInput] = useState('');
+
+  const fetchSavedResumes = async () => {
+    setResumesLoading(true);
+    try {
+      const res = await api.get('/saved-resumes');
+      setSavedResumes(res.data);
+    } catch (err) {
+      console.error('Error fetching saved resumes:', err);
+    } finally {
+      setResumesLoading(false);
+    }
+  };
+
 
   useEffect(() => {
     api.get('/api/profile').then(r => {
       setProfile(r.data);
       setPersonal(r.data.personal || {});
       setBasic(r.data.basic_details || {});
+      fetchSavedResumes();
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+
+  const handleDeleteResume = async (resumeId: string) => {
+    if (!window.confirm('Are you sure you want to delete this saved resume?')) return;
+    try {
+      await api.delete(`/saved-resumes/${resumeId}`);
+      setSavedResumes(prev => prev.filter(r => r.id !== resumeId));
+    } catch (err) {
+      console.error('Error deleting resume:', err);
+      alert('Failed to delete the resume. Please try again.');
+    }
+  };
+
+
+  const handleOpenResume = (resume: any) => {
+    navigate('/resume-preview', { state: { latex: resume.latex } });
+  };
 
   /* ─── save helpers ─── */
   const save = async (patch: any) => {
@@ -322,6 +358,65 @@ export default function Dashboard() {
                   </div>
                 ))}</div>
                 : <EmptyState msg="No education added yet." />}
+            </div>
+
+            {/* ── Saved Resumes ── */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 xl:col-span-2">
+              <CardHeader 
+                icon={<FileText className="w-5 h-5 text-brand-600" />} 
+                color="bg-brand-50" 
+                title="Saved Resumes" 
+              />
+
+              
+              {resumesLoading ? (
+                <div className="flex justify-center items-center py-6">
+                  <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs text-slate-500 ml-2">Loading saved resumes...</span>
+                </div>
+              ) : savedResumes.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {savedResumes.map((resume) => (
+                    <div key={resume.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100/70 transition-all flex flex-col justify-between group">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-white rounded-lg border border-slate-200 text-brand-500 shadow-sm flex-shrink-0">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-800 leading-snug line-clamp-1">{resume.title}</h4>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Saved on {new Date(resume.created_at).toLocaleDateString(undefined, { 
+                                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                              })}
+
+                            </p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteResume(resume.id)} 
+                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg hover:bg-red-50 text-red-400 transition"
+                          title="Delete Resume"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-200/60 justify-end">
+                        <button 
+                          onClick={() => handleOpenResume(resume)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white text-xs font-semibold rounded-lg transition"
+                        >
+                          <FileCode className="w-3.5 h-3.5" />
+                          Open in Editor
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState msg="No resumes saved yet. Go to the Resume Builder page to generate and save one!" />
+              )}
             </div>
 
           </div>

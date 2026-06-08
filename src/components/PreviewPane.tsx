@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { Loader2, RefreshCw } from 'lucide-react';

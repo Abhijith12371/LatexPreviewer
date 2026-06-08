@@ -7,3 +7,11 @@ langchain
 langchain-openai
 python-dotenv
 sentence-transformers
+email-validator
+motor
+passlib
+bcrypt<4.0.0
+pyjwt
+python-multipart
+requests
+cloudinary

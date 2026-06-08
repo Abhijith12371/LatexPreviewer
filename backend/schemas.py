@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Dict, Optional
+from datetime import datetime
 
 # --- Auth Models ---
 
@@ -135,3 +136,12 @@ class GenerateResumeResponse(BaseModel):
     resume_json: ResumeJSON
     latex: str
     pdf_url: str
+
+class SavedResumeCreate(BaseModel):
+    pdf_url: str
+    job_title: Optional[str] = "Untitled Resume"
+
+class SavedResume(SavedResumeCreate):
+    id: str
+    user_id: str
+    created_at: datetime

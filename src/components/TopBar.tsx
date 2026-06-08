@@ -3,9 +3,10 @@ import { Bell } from 'lucide-react';
 interface TopBarProps {
   title: string;
   subtitle?: string;
+  children?: React.ReactNode;
 }
 
-function TopBar({ title, subtitle }: TopBarProps) {
+function TopBar({ title, subtitle, children }: TopBarProps) {
   return (
     <header className="h-16 flex items-center justify-between px-8 bg-white border-b border-slate-200 flex-shrink-0">
       <div>
@@ -14,6 +15,7 @@ function TopBar({ title, subtitle }: TopBarProps) {
       </div>
 
       <div className="flex items-center gap-4">
+        {children}
         <button className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors">
           <Bell className="w-5 h-5" />
           <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full" />
