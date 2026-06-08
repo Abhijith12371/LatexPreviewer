@@ -1,15 +1,23 @@
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Depends, status
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 import os
 import traceback
+import json
+from bson import ObjectId
 
-from schemas import GenerateResumeRequest, GenerateResumeResponse, CandidateProfile, PersonalInfo, Project, Experience
+from schemas import (
+    GenerateResumeRequest, GenerateResumeResponse, CandidateProfile, 
+    PersonalInfo, Project, Experience, UserCreate, UserResponse, Token
+)
 from pipeline import generate_resume_json
 from pdf_generator import generate_pdf_from_json
 from logger import log_generation
 from database import store_candidate_data
+from database_mongo import init_db, users_collection, profiles_collection
+from auth import get_password_hash, verify_password, create_access_token, decode_access_token
 
 app = FastAPI(title="AI Resume Generation API")
 
@@ -22,27 +30,92 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    await init_db()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    email = payload.get("email")
+    user = await users_collection.find_one({"email": email})
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return {"id": str(user["_id"]), "email": user["email"]}
+
+@app.post("/auth/register", response_model=UserResponse)
+async def register(user: UserCreate):
+    existing_user = await users_collection.find_one({"email": user.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_password = get_password_hash(user.password)
+    new_user = await users_collection.insert_one({
+        "email": user.email,
+        "hashed_password": hashed_password
+    })
+    
+    # Initialize empty profile
+    empty_profile = CandidateProfile(user_id=str(new_user.inserted_id))
+    await profiles_collection.insert_one(empty_profile.model_dump())
+    
+    return UserResponse(id=str(new_user.inserted_id), email=user.email)
+
+@app.post("/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await users_collection.find_one({"email": form_data.username})
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = create_access_token(data={"email": user["email"]})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/api/profile", response_model=CandidateProfile)
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    profile = await profiles_collection.find_one({"user_id": current_user["id"]})
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return CandidateProfile(**profile)
+
+@app.put("/api/profile", response_model=CandidateProfile)
+async def update_profile(profile_update: CandidateProfile, current_user: dict = Depends(get_current_user)):
+    # Ensure they are updating their own profile
+    if profile_update.user_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to update this profile")
+    
+    update_data = profile_update.model_dump()
+    await profiles_collection.update_one(
+        {"user_id": current_user["id"]},
+        {"$set": update_data},
+        upsert=True
+    )
+    return profile_update
+
 @app.post("/generate-resume", response_model=GenerateResumeResponse)
-async def generate_resume(request: GenerateResumeRequest):
+async def generate_resume(request: GenerateResumeRequest, current_user: dict = Depends(get_current_user)):
     try:
+        profile_dict = await profiles_collection.find_one({"user_id": current_user["id"]})
+        if not profile_dict:
+            raise HTTPException(status_code=404, detail="Profile not found for this user.")
+        
+        profile = CandidateProfile(**profile_dict)
+        
         # 1. RAG + LLM Pipeline
-        pipeline_result = generate_resume_json(request.job_description, request.candidate_id)
+        pipeline_result = generate_resume_json(request.job_description, profile)
         resume_json = pipeline_result["generated_json"]
-        retrieved_context = pipeline_result["retrieved_context"]
         
         # 2. Render LaTeX and compile PDF
-        pdf_filepath = generate_pdf_from_json(resume_json, request.candidate_id)
+        pdf_filepath = generate_pdf_from_json(resume_json, current_user["id"])
         
-        # 3. Log the interaction for future fine-tuning
-        log_generation(
-            job_description=request.job_description,
-            retrieved_context=retrieved_context,
-            generated_json=resume_json,
-            pdf_filepath=pdf_filepath
-        )
-        
-        # 4. Save the generated JSON payload to the output directory for inspection
-        json_output_path = os.path.join(os.path.dirname(__file__), "output", f"resume_{request.candidate_id}.json")
+        # 3. Save the generated JSON payload to the output directory for inspection
+        json_output_path = os.path.join(os.path.dirname(__file__), "output", f"resume_{current_user['id']}.json")
         with open(json_output_path, "w", encoding="utf-8") as f:
             f.write(resume_json.model_dump_json(indent=2))
         

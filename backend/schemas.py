@@ -1,17 +1,50 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Dict, Optional
 
-# --- Candidate Knowledge Base Models ---
+# --- Auth Models ---
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    email: str | None = None
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserResponse(BaseModel):
+    id: str
+    email: EmailStr
+
+# --- Dashboard Knowledge Base Models ---
+
+class PersonalInfo(BaseModel):
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    location: str = ""
+    linkedin: str = ""
+    github: str = ""
+    portfolio: Optional[str] = ""
+
+class BasicDetails(BaseModel):
+    role_designation: str = ""
+    current_role: str = ""
+    experience_years: str = ""
+    notice_period: str = ""
+    expected_ctc: str = ""
 
 class Project(BaseModel):
     id: str
     title: str
     technologies: List[str]
-    tags: List[str]
     description: str
-    impact_metrics: List[str]
     github_link: Optional[str] = None
-    ats_keywords: List[str]
+    impact_metrics: List[str] = []
+    tags: List[str] = []
+    ats_keywords: List[str] = []
 
 class Experience(BaseModel):
     id: str
@@ -20,42 +53,38 @@ class Experience(BaseModel):
     location: str
     duration: str
     bullet_library: List[str]
-    ats_keywords: List[str]
+    ats_keywords: List[str] = []
 
 class Certification(BaseModel):
+    id: str
     name: str
     issuer: str
     date: str
-    tags: List[str]
+    tags: List[str] = []
 
 class Achievement(BaseModel):
+    id: str
     title: str
     description: str
-    category: str # e.g., 'Competition', 'Publication', 'Award', 'Ranking'
+    category: str = "Award"
 
 class EducationItem(BaseModel):
+    id: str
     institution: str
     degree: str
     gpa: str
     graduation_date: str
 
-class PersonalInfo(BaseModel):
-    name: str
-    email: str
-    phone: str
-    linkedin: str
-    github: str
-    portfolio: Optional[str] = None
-
 class CandidateProfile(BaseModel):
-    candidate_id: str
-    personal: PersonalInfo
-    education: List[EducationItem]
-    skills: Dict[str, List[str]] # Categories like "Programming Languages", "AI / ML"
-    projects: List[Project]
-    experiences: List[Experience]
-    certifications: List[Certification]
-    achievements: List[Achievement]
+    user_id: str
+    personal: PersonalInfo = Field(default_factory=PersonalInfo)
+    basic_details: BasicDetails = Field(default_factory=BasicDetails)
+    education: List[EducationItem] = Field(default_factory=list)
+    skills: Dict[str, List[str]] = Field(default_factory=dict)
+    projects: List[Project] = Field(default_factory=list)
+    experiences: List[Experience] = Field(default_factory=list)
+    certifications: List[Certification] = Field(default_factory=list)
+    achievements: List[Achievement] = Field(default_factory=list)
 
 
 # --- Resume JSON Schema (LLM Output) ---
@@ -101,7 +130,6 @@ class ResumeJSON(BaseModel):
 
 class GenerateResumeRequest(BaseModel):
     job_description: str
-    candidate_id: str
 
 class GenerateResumeResponse(BaseModel):
     resume_json: ResumeJSON

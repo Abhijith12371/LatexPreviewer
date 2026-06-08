@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from schemas import (
     ResumeJSON, ResumeProject, ResumeExperience,
-    ResumeEducation, ResumeCertification, ResumeAchievement, PersonalInfo
+    ResumeEducation, ResumeCertification, ResumeAchievement, PersonalInfo, CandidateProfile
 )
 from database import retrieve_relevant_context
 
@@ -102,44 +102,40 @@ JSON SCHEMA:
 }"""
 
 
-def construct_prompt(job_description: str, candidate_context: dict, candidate_skills: dict) -> str:
+def construct_prompt(job_description: str, profile: CandidateProfile) -> str:
     return f"""TARGET JOB DESCRIPTION:
 {job_description}
 
 CANDIDATE KNOWLEDGE BASE (use personal info and education exactly; use projects/experiences as inspiration):
 
 Personal Info:
-{json.dumps({
-    "name": "Nagula V S S Abhijith",
-    "email": "abhijithnagula@gmail.com",
-    "phone": "+91 8333058659",
-    "linkedin": "linkedin.com/in/Abhijith71",
-    "github": "github.com/Abhijith12371",
-    "portfolio": "abhijith-3d.netlify.app"
-}, indent=2)}
+{json.dumps(profile.personal.model_dump(), indent=2)}
+
+Basic Details:
+{json.dumps(profile.basic_details.model_dump(), indent=2)}
 
 Education:
-{json.dumps([
-    {"institution": "NRI Institute of Technology", "degree": "B.Tech in Data Science",
-     "date": "Expected May 2026 | Vijayawada", "gpa": "8.5/10"}
-], indent=2)}
+{json.dumps([e.model_dump() for e in profile.education], indent=2)}
+
+Skills:
+{json.dumps(profile.skills, indent=2)}
 
 Existing Projects (for inspiration — adapt and tailor to the role):
-{json.dumps(candidate_context.get('projects', []), indent=2)}
+{json.dumps([p.model_dump() for p in profile.projects], indent=2)}
 
 Existing Experiences (for inspiration — adapt and tailor to the role):
-{json.dumps(candidate_context.get('experiences', []), indent=2)}
+{json.dumps([e.model_dump() for e in profile.experiences], indent=2)}
 
 Existing Certifications (for reference):
-{json.dumps(candidate_context.get('certifications', []), indent=2)}
+{json.dumps([c.model_dump() for c in profile.certifications], indent=2)}
 
 Existing Achievements (for reference):
-{json.dumps(candidate_context.get('achievements', []), indent=2)}
+{json.dumps([a.model_dump() for a in profile.achievements], indent=2)}
 
 TASK:
 Generate a complete, ATS-optimised resume JSON for the above candidate targeting the job description above.
 - Keep all personal info and education exactly as provided.
-- Generate EXACTLY 4 role-relevant internship experiences.
+- Generate EXACTLY 4 role-relevant internship/work experiences.
 - Generate EXACTLY 3 role-relevant projects.
 - Generate role-specific skills, certifications, and achievements.
 - Output RAW JSON only. No markdown. No explanation."""
@@ -216,16 +212,14 @@ def get_mock_resume() -> ResumeJSON:
     )
 
 
-def generate_resume_json(job_description: str, candidate_id: str) -> dict:
+def generate_resume_json(job_description: str, profile: CandidateProfile) -> dict:
     """
-    Orchestrates RAG retrieval and real LLM generation via OpenRouter.
-    Returns a dict with 'retrieved_context' and 'generated_json'.
+    Orchestrates real LLM generation via OpenRouter using MongoDB profile data.
+    Returns a dict with 'generated_json'.
     """
-    retrieved_context = retrieve_relevant_context(job_description, candidate_id)
-
     if not OPENROUTER_API_KEY:
         print("[Pipeline] No API key found. Using mock resume.")
-        return {"retrieved_context": retrieved_context, "generated_json": get_mock_resume()}
+        return {"generated_json": get_mock_resume()}
 
     try:
         llm = ChatOpenAI(
@@ -236,11 +230,11 @@ def generate_resume_json(job_description: str, candidate_id: str) -> dict:
             max_tokens=3000,
             default_headers={
                 "HTTP-Referer": "http://localhost:5173",
-                "X-Title": "AI Resume Builder"
+                "X-Title": "CareerHub"
             }
         )
 
-        prompt = construct_prompt(job_description, retrieved_context, {})
+        prompt = construct_prompt(job_description, profile)
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=prompt)
@@ -255,7 +249,7 @@ def generate_resume_json(job_description: str, candidate_id: str) -> dict:
         resume = ResumeJSON(**json_data)
         print("[Pipeline] Successfully parsed LLM output into ResumeJSON.")
 
-        return {"retrieved_context": retrieved_context, "generated_json": resume}
+        return {"generated_json": resume}
 
     except Exception as e:
         print(f"[Pipeline] LLM call failed: {e}. Falling back to mock resume.")

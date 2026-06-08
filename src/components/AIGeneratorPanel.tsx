@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Bot, Download, FileText, Loader2, Play } from 'lucide-react';
+import api from '../api';
 
 interface AIGeneratorPanelProps {
   onGenerate: (latex: string) => void;
@@ -22,21 +23,11 @@ const AIGeneratorPanel: React.FC<AIGeneratorPanelProps> = ({ onGenerate }) => {
     setGeneratedTex(null);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/generate-resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_description: jobDescription,
-          candidate_id: 'user_123',
-        }),
+      const response = await api.post('/generate-resume', {
+        job_description: jobDescription
       });
 
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}));
-        throw new Error(detail?.detail || 'Failed to generate resume. Ensure the backend is running.');
-      }
-
-      const data = await response.json();
+      const data = response.data;
       console.log('[AI Generator] latex preview:', data.latex?.substring(0, 120));
 
       if (data.latex) {
@@ -46,7 +37,7 @@ const AIGeneratorPanel: React.FC<AIGeneratorPanelProps> = ({ onGenerate }) => {
         throw new Error('No LaTeX content returned from the server.');
       }
     } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+      setError(err.response?.data?.detail || err.message || 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
     }
